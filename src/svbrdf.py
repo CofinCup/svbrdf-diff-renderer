@@ -6,7 +6,9 @@ import json
 import tqdm
 import numpy as np
 import torch as th
+from pathlib import Path
 from datetime import datetime
+import torchvision.transforms as transforms
 
 from .imageio import imread, imwrite, img9to1, tex4to1
 from .optimization import Optim
@@ -65,20 +67,20 @@ class SvbrdfOptim(Optim):
             self.optimizer.step()
 
             # save process
-            if (epoch + 1) % 100 == 0 or epoch == 0 or epoch == (epochs - 1):
-                tmp_this_dir = tmp_dir / f"{epoch + 1}"
-                tmp_this_dir.mkdir(parents=True, exist_ok=True)
+            # if (epoch + 1) % 100 == 0 or epoch == 0 or epoch == (epochs - 1):
+            #     tmp_this_dir = tmp_dir / f"{epoch + 1}"
+            #     tmp_this_dir.mkdir(parents=True, exist_ok=True)
 
-                self.save_loss([loss_image_list], ["image loss"], tmp_dir / "loss.jpg", epochs)
+            #     self.save_loss([loss_image_list], ["image loss"], tmp_dir / "loss.jpg", epochs)
 
-                svbrdf_obj.save_textures_th(self.textures.clamp(-1, 1), tmp_this_dir)
+            #     svbrdf_obj.save_textures_th(self.textures.clamp(-1, 1), tmp_this_dir)
 
-                rendereds = self.renderer_obj.eval(self.textures.clamp(-1, 1))
-                svbrdf_obj.save_images_th(rendereds, tmp_this_dir)
+            #     rendereds = self.renderer_obj.eval(self.textures.clamp(-1, 1))
+            #     svbrdf_obj.save_images_th(rendereds, tmp_this_dir)
 
 
 class SvbrdfIO:
-    def __init__(self, json_dir, device):
+    def __init__(self, json_dir, dir5, device):
         self.device = device
 
         if not json_dir.exists():
@@ -88,19 +90,24 @@ class SvbrdfIO:
         with open(json_dir, "r") as f:
             data = json.load(f)
 
-        if "reference_dir" in data:
-            self.reference_dir = json_dir.parent / data["reference_dir"]
-        if "target_dir" in data:
-            self.target_dir = json_dir.parent / data["target_dir"]
-        if "optimize_dir" in data:
-            self.optimize_dir = json_dir.parent / data["optimize_dir"]
-        if "rerender_dir" in data:
-            self.rerender_dir = json_dir.parent / data["rerender_dir"]
+        # get reference_dir, target_dir, optimize_dir, rerender_dir from dir5
+        # 原版本代码中这几个文件由json读取，为了适配montage，这里改为从dir5读取
+        reference_dir = Path(dir5[0])
+        target_dir = Path(dir5[1])
+        optimize_dir = Path(dir5[2])
+        rerender_dir = Path(dir5[3])
+        result_dir = Path(dir5[4])
+
+        self.reference_dir = result_dir / reference_dir
+        self.target_dir = result_dir / target_dir
+        self.optimize_dir = result_dir / optimize_dir
+        self.rerender_dir = result_dir / rerender_dir
+        
+        self.idx = range(len(data["camera_pos"]))
+        self.n_of_imgs = len(data["camera_pos"])
+        
         if "im_size" in data:
             self.im_size = data["im_size"]
-        if "idx" in data:
-            self.idx = data["idx"]
-            self.n_of_imgs = len(self.idx)
         if "camera_pos" in data:
             self.camera_pos = data["camera_pos"]
         if "light_pos" in data:
@@ -141,23 +148,62 @@ class SvbrdfIO:
 
         print("[DONE:SvbrdfIO] Load parameters")
 
-    def load_textures_th(self, textures_dir, res):
-        if not textures_dir.exists:
-            print(f"[ERROR:SvbrdfIO:load_textures_th] {textures_dir} is not exists")
-            exit()
+    # def load_textures_th(self, textures_dir, res):
+    #     if not textures_dir.exists:
+    #         print(f"[ERROR:SvbrdfIO:load_textures_th] {textures_dir} is not exists")
+    #         exit()
 
-        normal = imread(textures_dir / "nom.png", "normal", (res, res))
-        diffuse = imread(textures_dir / "dif.png", "srgb", (res, res))
-        specular = imread(textures_dir / "spe.png", "srgb", (res, res))
-        roughness = imread(textures_dir / "rgh.png", "rough", (res, res))
+    #     normal = imread(textures_dir / "nom.png", "normal", (res, res))
+    #     diffuse = imread(textures_dir / "dif.png", "srgb", (res, res))
+    #     specular = imread(textures_dir / "spe.png", "srgb", (res, res))
+    #     roughness = imread(textures_dir / "rgh.png", "rough", (res, res))
 
-        normal_th = self.np_to_th(normal).permute(2, 0, 1).unsqueeze(0)
-        diffuse_th = self.np_to_th(diffuse*2-1).permute(2, 0, 1).unsqueeze(0)
-        specular_th = self.np_to_th(specular*2-1).permute(2, 0, 1).unsqueeze(0)
-        roughness_th = self.np_to_th(roughness*2-1).unsqueeze(0).unsqueeze(0)
+    #     normal_th = self.np_to_th(normal).permute(2, 0, 1).unsqueeze(0)
+    #     diffuse_th = self.np_to_th(diffuse*2-1).permute(2, 0, 1).unsqueeze(0)
+    #     specular_th = self.np_to_th(specular*2-1).permute(2, 0, 1).unsqueeze(0)
+    #     roughness_th = self.np_to_th(roughness*2-1).unsqueeze(0).unsqueeze(0)
 
-        print("[DONE:SvbrdfIO] Load textures (numbers in range [-1,1])")
-        return th.cat((diffuse_th, normal_th[:, :2, :, :], roughness_th, specular_th), 1)
+    #     print("[DONE:SvbrdfIO] Load textures (numbers in range [-1,1])")
+    #     return th.cat((diffuse_th, normal_th[:, :2, :, :], roughness_th, specular_th), 1)
+    
+    def load_textures_th(self, textures_path):
+        if not textures_path.exists():
+            raise FileNotFoundError(f"[ERROR:SvbrdfIO:load_textures_th] {textures_path} does not exist")
+
+        # 读取 SVBRDF 拼接图
+        svbrdf = imread(textures_path, "srgb")
+        height = svbrdf.shape[0]   # 1024
+        width = svbrdf.shape[1]    # 应该是 4096 (4 * 1024)
+
+        # 确保图片宽度正确是4倍的高度
+        if width != 4 * height:
+            raise ValueError(f"Expected width to be 4 times the height, but got {width}")
+
+        normal = svbrdf[:, :height]                    # 法线贴图
+        diffuse = svbrdf[:, height:2*height]           # 漫反射贴图
+        roughness = svbrdf[:, 2*height:3*height]       # 粗糙度贴图
+        specular = svbrdf[:, 3*height:]                # 镜面反射贴图
+
+        # 定义缩放操作
+        resize = transforms.Resize((256, 256))
+
+        # 分别缩放每个贴图
+        normal_resized = resize(th.from_numpy(normal).permute(2, 0, 1))    # 变成 (C, H, W)
+        diffuse_resized = resize(th.from_numpy(diffuse).permute(2, 0, 1))
+        roughness_resized = resize(th.from_numpy(np.mean(roughness, axis=2, keepdims=True)).permute(2, 0, 1))  # 转为单通道
+        specular_resized = resize(th.from_numpy(specular).permute(2, 0, 1))
+
+        # 归一化处理
+        normal_resized = (normal_resized * 2 - 1)   # 法线归一化
+        im_norm = th.norm(normal_resized, dim=0, keepdim=True)
+        normal_resized /= im_norm                   # 确保法线方向正确
+
+        diffuse_resized = (diffuse_resized * 2 - 1)  # 漫反射归一化
+        specular_resized = (specular_resized * 2 - 1) # 镜面反射归一化
+        roughness_resized = (roughness_resized * 2 - 1) # 粗糙度归一化
+
+        # 将所有贴图转换为 torch tensor，并拼接
+        return th.cat((diffuse_resized.unsqueeze(0), normal_resized.unsqueeze(0)[:, :2, :, :], roughness_resized.unsqueeze(0), specular_resized.unsqueeze(0)), 1)
 
     def save_textures_th(self, textures_th, textures_dir):
         textures_dir.mkdir(parents=True, exist_ok=True)
@@ -179,8 +225,6 @@ class SvbrdfIO:
         imwrite(roughness, textures_dir / "rgh.png", "rough")
 
         tex4to1(textures_dir)
-
-        print("[DONE:SvbrdfIO] Save textures")
 
     def load_images_th(self, images_dir, res=256):
         if not images_dir.exists:

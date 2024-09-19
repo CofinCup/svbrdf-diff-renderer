@@ -21,7 +21,8 @@ class Microfacet:
 
         self.camera_pos = cl[0].unsqueeze(2).unsqueeze(3).expand(-1, -1, res, res)
         self.light_pos = cl[1].unsqueeze(2).unsqueeze(3).expand(-1, -1, res, res)
-        self.light_pow = cl[2].unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(n, -1, res, res)
+        # 原本的代码中需求的光照强度是3维的，但是montage数据中只有1维，所以这里需要扩展维度
+        self.light_pow = cl[2].expand(3).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(n, -1, res, res)
 
         print("[DONE:Microfacet] Initial object")
 
@@ -73,7 +74,8 @@ class Microfacet:
         # Reformats tensor from [1, 9, res, res] to four [N, 3, res, res] maps
         diffuse = (((textures[:, 0:3, :, :] + 1) / 2) ** 2.2).expand(self.n_of_imgs, -1, -1, -1)
         normal = self.reconstruct_normal(textures[:, 3:5, :, :]).expand(self.n_of_imgs, -1, -1, -1)
-        roughness = (((textures[:, 5, :, :] + 1) / 2) ** 2.2).expand(self.n_of_imgs, 3, -1, -1)
+        #去除粗糙度gamma
+        roughness = (((textures[:, 5, :, :] + 1) / 2)).expand(self.n_of_imgs, 3, -1, -1)
         specular = (((textures[:, 6:9, :, :] + 1) / 2) ** 2.2).expand(self.n_of_imgs, -1, -1, -1)
 
         return normal, diffuse, specular, roughness

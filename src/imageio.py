@@ -75,7 +75,7 @@ def imresize(im, dim):
     return cv2.resize(im, dim, interpolation=cv2.INTER_LANCZOS4)
 
 
-def imconcat(im_list, size=(2, 2)):
+def imconcat(im_list, size=(4, 1)):
     w, h = size
     im_col = []
     for i in range(h):
@@ -106,7 +106,7 @@ def tex4to1(folder):
     if roughness.ndim == 2:
         roughness = np.dstack((roughness, roughness, roughness))
 
-    tex = imconcat([normal, diffuse, specular, roughness])
+    tex = imconcat([normal, diffuse, roughness, specular]) # 原本的顺序与montage数据集不一致
     imwrite(tex, folder / "tex.png")
 
 

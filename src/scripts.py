@@ -7,6 +7,8 @@ import shutil
 import numpy as np
 import torch as th
 
+from pathlib import Path
+
 from .capture import Capture
 from .materialgan import MaterialGANOptim
 from .microfacet import Microfacet
@@ -19,7 +21,7 @@ def gen_textures_from_materialgan(json_dir):
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
     # device = th.device("cpu")
 
-    svbrdf_obj = SvbrdfIO(json_dir, device)
+    svbrdf_obj = SvbrdfIO(json_dir, None, device)
 
     optim_obj = MaterialGANOptim(device, None, "ckp/materialgan.pth")
     optim_obj.init_from([])
@@ -28,11 +30,11 @@ def gen_textures_from_materialgan(json_dir):
     svbrdf_obj.save_textures_th(textures, svbrdf_obj.reference_dir)
 
 
-def render(json_dir, res):
+def render(json_dir, dir5, res):
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
     # device = th.device("cpu")
 
-    svbrdf_obj = SvbrdfIO(json_dir, device)
+    svbrdf_obj = SvbrdfIO(json_dir, dir5, device)
     textures = svbrdf_obj.load_textures_th(svbrdf_obj.reference_dir, res)
 
     render_obj = Microfacet(res, svbrdf_obj.n_of_imgs, svbrdf_obj.im_size, svbrdf_obj.cl, device)
@@ -63,11 +65,11 @@ def gen_targets_from_capture(data_dir, size=17.0, depth=0.1):
     input_obj.eval(size, depth)
 
 
-def optim_perpixel(json_dir, res, lr, epochs, tex_init):
+def optim_perpixel(json_dir, dir5, res, lr, epochs, tex_init):
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
     # device = th.device("cpu")
 
-    svbrdf_obj = SvbrdfIO(json_dir, device)
+    svbrdf_obj = SvbrdfIO(json_dir, dir5, device)
     targets = svbrdf_obj.load_images_th(svbrdf_obj.target_dir, res)
 
     renderer_obj = Microfacet(res, svbrdf_obj.n_of_imgs, svbrdf_obj.im_size, svbrdf_obj.cl, device)
@@ -92,20 +94,28 @@ def optim_perpixel(json_dir, res, lr, epochs, tex_init):
     svbrdf_obj.save_images_th(rendereds, svbrdf_obj.rerender_dir)
 
 
-def optim_ganlatent(json_dir, res, lr, epochs, tex_init):
+def optim_ganlatent(json_path, mat_name, dir5, res, lr, epochs, tex_init):
     # epochs: list of 3 int. [0] is total epochs, [1] is epochs for latent, [2] is for noise, in each cycle.
     # tex_init: string. [], [PATH_TO_LATENT.pt], or [PATH_TO_LATENT.pt, PATH_TO_NOISE.pt]
 
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
     # device = th.device("cpu")
 
-    svbrdf_obj = SvbrdfIO(json_dir, device)
-    targets = svbrdf_obj.load_images_th(svbrdf_obj.target_dir, res)
+    svbrdf_obj = SvbrdfIO(json_path, dir5, device)
+    svbrdf_obj.reference_dir = Path(json_path).parent
+    # targets = svbrdf_obj.load_images_th(svbrdf_obj.target_dir, res)
+    # svbrdf_obj.reference_dir = json_dir
+    textures = svbrdf_obj.load_textures_th(svbrdf_obj.reference_dir / (mat_name + ".png"))
+
+    render_obj = Microfacet(res, svbrdf_obj.n_of_imgs, svbrdf_obj.im_size, svbrdf_obj.cl, device)
+    rendereds = render_obj.eval(textures.to(device))
 
     renderer_obj = Microfacet(res, svbrdf_obj.n_of_imgs, svbrdf_obj.im_size, svbrdf_obj.cl, device)
 
     optim_obj = MaterialGANOptim(device, renderer_obj, ckp="ckp/materialgan.pth")
-    optim_obj.load_targets(targets)
+    optim_obj.load_targets(rendereds)
+    
+    # svbrdf_obj.save_images_th(rendereds, Path("/root/test_data/rendereds"))
 
     if tex_init == "auto":
         optim_obj.init_from(["ckp/latent_avg_W+_256.pt"])
@@ -126,5 +136,5 @@ def optim_ganlatent(json_dir, res, lr, epochs, tex_init):
     optim_obj.optim(epochs, lr, svbrdf_obj)
 
     svbrdf_obj.save_textures_th(optim_obj.textures, svbrdf_obj.optimize_dir)
-    rendereds = renderer_obj.eval(optim_obj.textures)
-    svbrdf_obj.save_images_th(rendereds, svbrdf_obj.rerender_dir)
+    # rendereds = renderer_obj.eval(optim_obj.textures)
+    # svbrdf_obj.save_images_th(rendereds, svbrdf_obj.rerender_dir)

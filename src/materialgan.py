@@ -79,9 +79,9 @@ class MaterialGANOptim(Optim):
         return textures
 
     def optim(self, epochs, lr, svbrdf_obj):
-        tmp_name = str(datetime.now()).replace(" ", "-").replace(":", "-").replace(".", "-")
-        tmp_dir = svbrdf_obj.optimize_dir / "tmp" / tmp_name
-        tmp_dir.mkdir(parents=True, exist_ok=True)
+        # tmp_name = str(datetime.now()).replace(" ", "-").replace(":", "-").replace(".", "-")
+        # tmp_dir = svbrdf_obj.optimize_dir / "tmp" / tmp_name
+        # tmp_dir.mkdir(parents=True, exist_ok=True)
 
         total_epochs, l_epochs, n_epochs = epochs
         cycle_epochs = l_epochs + n_epochs
@@ -121,20 +121,20 @@ class MaterialGANOptim(Optim):
             self.optimizer.step()
 
             # save process
-            if (epoch + 1) % 200 == 0 or epoch == 0 or epoch == (total_epochs - 1):
-                tmp_this_dir = tmp_dir / f"{epoch + 1}"
-                tmp_this_dir.mkdir(parents=True, exist_ok=True)
+            # if (epoch + 1) % 200 == 0 or epoch == 0 or epoch == (total_epochs - 1):
+            #     tmp_this_dir = tmp_dir / f"{epoch + 1}"
+            #     tmp_this_dir.mkdir(parents=True, exist_ok=True)
 
-                self.save_loss([loss_image_list, loss_feature_list], ["image loss", "feature loss"], tmp_dir / "loss.jpg", total_epochs)
+            #     self.save_loss([loss_image_list, loss_feature_list], ["image loss", "feature loss"], tmp_dir / "loss.jpg", total_epochs)
 
-                th.save(self.latent, tmp_this_dir / "optim_latent.pt")
-                th.save(globalvar.noises, tmp_this_dir / "optim_noise.pt")
+            #     th.save(self.latent, tmp_this_dir / "optim_latent.pt")
+            #     th.save(globalvar.noises, tmp_this_dir / "optim_noise.pt")
 
-                textures = self.latent_to_textures(self.latent)
-                svbrdf_obj.save_textures_th(textures, tmp_this_dir)
+            #     textures = self.latent_to_textures(self.latent)
+            #     svbrdf_obj.save_textures_th(textures, tmp_this_dir)
 
-                rendereds = self.renderer_obj.eval(textures)
-                svbrdf_obj.save_images_th(rendereds, tmp_this_dir)
+            #     rendereds = self.renderer_obj.eval(textures)
+            #     svbrdf_obj.save_images_th(rendereds, tmp_this_dir)
 
         self.textures = textures
         self.loss = loss.item()

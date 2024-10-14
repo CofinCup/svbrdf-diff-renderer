@@ -1,0 +1,8 @@
+{   
+    "_comment": "in cm uint",
+    "im_size": 8,
+    "idx": [0],
+    "camera_pos": [[ 0, 0, 7]],
+    "light_pos":  [[ 0, 0, 7]],
+    "light_pow": 200
+}

@@ -98,7 +98,7 @@ def img9to1(folder):
     imwrite(im, folder / "all.png")
 
 
-def tex4to1(folder):
+def tex4to1(folder, prefix = None):
     normal = imread(folder / "nom.png")
     diffuse = imread(folder / "dif.png")
     specular = imread(folder / "spe.png")
@@ -108,13 +108,17 @@ def tex4to1(folder):
         roughness = np.dstack((roughness, roughness, roughness))
 
     tex = imconcat([normal, diffuse, roughness, specular]) # 原本的顺序与montage数据集不一致
-    imwrite(tex, folder / "tex.png")
+    if prefix is not None:
+        imwrite(tex, folder / (str(prefix) + "_tex.png"))
+    else:
+        imwrite(tex, folder / "tex.png")
 
 
 def img2gif(in_filenames, out_filename, method="Pillow"):
+    in_filenames = sorted(in_filenames)
     if method == "Pillow":
         images = [Image.open(str(in_filename)) for in_filename in in_filenames]
-        images[0].save(str(out_filename), save_all=True, append_images=images[1:], optimize=False, loop=0, duration=40)
+        images[0].save(str(out_filename), save_all=True, append_images=images[1:], optimize=False, loop=0, duration=100)
     elif method == "ImageMagick":
         cmd = f"convert -delay 4 -loop 0 {str(in_filenames)} {str(out_filename)}"
         os.system(cmd)

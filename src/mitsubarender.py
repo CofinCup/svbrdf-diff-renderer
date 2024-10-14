@@ -9,13 +9,19 @@ class MitsubaRender:
         self.scene = self.scene_dict()
         self.scene['sensor']['film']['width'] = im_size[0]
         self.scene['sensor']['film']['height'] = im_size[1]
-        self.scene['emitter']['filename'] = envmap_dir
         self.load_texturemaps(maps_dir)
 
-    def render(self, angle, light_intensity=1.0):
+    def render(self, light_pos, light_pow, cam_pos):
+        if light_pos is None:
+            print("[Warning] light_pos is None, using default light position")
+        self.scene['light']['position'] = light_pos
+        self.scene['light']['intensity']['value'] = light_pow
+        self.scene['sensor']['to_world'] = T.look_at(
+            target=[0, 0, 0],
+            origin=cam_pos,
+            up=[0, 1, 0])
         self.scene['shape']['to_world'] = \
-            T.translate([0, 0, 0]).rotate([0, 1, 0], angle).rotate([1, 0, 0], -15).rotate([0, 0, 1], -5).scale([0.3, 0.3, 0.3])
-        self.scene['emitter']['scale'] = light_intensity
+                    T.translate([0, 0, 0]).rotate([1, 0, 0], -30).rotate([0, 1, 0], 0).rotate([0, 0, 1], -10).scale([0.3, 0.3, 0.3])
         return np.array(mi.render(mi.load_dict(self.scene))).clip(0, 1) ** (1 / 2.2)
 
     def load_texturemaps(self, maps_dir):
@@ -54,7 +60,7 @@ class MitsubaRender:
             },
             'shape': {
                 'type': 'rectangle',
-                'to_world': T.translate([0, 0, 0]).rotate([0, 1, 0], 0).rotate([1, 0, 0], -15).rotate([0, 0, 1], -5).scale([0.3, 0.3, 0.3]),
+                'to_world': T.translate([0, 0, 0]).scale([0.3, 0.3, 0.3]),
                 'bsdf': {
                     'type': 'normalmap',
                     'normalmap': {
@@ -94,12 +100,15 @@ class MitsubaRender:
                     }
                 }
             },
-            'emitter': {
-                'type': 'envmap',
-                'filename': 'ennis.exr',
-                'scale': 1,
-                'to_world': T.rotate([0, 1, 0], 0)
-            }
+            'light': {
+                    'type': 'point',
+                    'position': [0, 0, 3],
+                    'intensity': {
+                        'type': 'rgb',
+                        'value': 100
+                    }
+                },
+
         }
 
         return scene

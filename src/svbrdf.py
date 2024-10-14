@@ -80,7 +80,8 @@ class SvbrdfOptim(Optim):
 
 
 class SvbrdfIO:
-    def __init__(self, json_dir, dir5, device):
+    # def __init__(self, json_dir, dir5, device):
+    def __init__(self, json_dir, dir5, device, input_num):
         self.device = device
 
         if not json_dir.exists():
@@ -103,7 +104,14 @@ class SvbrdfIO:
         self.optimize_dir = result_dir / optimize_dir
         self.rerender_dir = result_dir / rerender_dir
         
-        self.idx = range(len(data["camera_pos"]))
+        data["camera_pos"] = data["camera_pos"][:input_num]
+        data["light_pos"] = data["light_pos"][:input_num]
+        
+        if "idx" in data:
+            self.idx = data["idx"]
+        else:
+            self.idx = range(len(data["camera_pos"]))
+        self.index_in_batch = range(len(self.idx))
         self.n_of_imgs = len(data["camera_pos"])
         
         if "im_size" in data:
@@ -116,7 +124,7 @@ class SvbrdfIO:
             self.light_pow = data["light_pow"]
             self.load_calibration_th()
 
-        print("[DONE:SvbrdfIO] Initial object")
+        # print("[DONE:SvbrdfIO] Initial object")
 
     def np_to_th(self, arr):
         return th.from_numpy(arr).to(self.device)
@@ -137,8 +145,8 @@ class SvbrdfIO:
         light_pos = np.array(self.light_pos, "float32")
         light_pow = np.array(self.light_pow, "float32")
 
-        camera_pos = camera_pos[self.idx, :]
-        light_pos = light_pos[self.idx, :]
+        camera_pos = camera_pos[self.index_in_batch, :]
+        light_pos = light_pos[self.index_in_batch, :]
 
         camera_pos_th = self.np_to_th(camera_pos)
         light_pos_th = self.np_to_th(light_pos)
@@ -146,7 +154,7 @@ class SvbrdfIO:
 
         self.cl = [camera_pos_th, light_pos_th, light_pow_th]
 
-        print("[DONE:SvbrdfIO] Load parameters")
+        # print("[DONE:SvbrdfIO] Load parameters")
 
     # def load_textures_th(self, textures_dir, res):
     #     if not textures_dir.exists:
@@ -175,9 +183,13 @@ class SvbrdfIO:
         height = svbrdf.shape[0]   # 1024
         width = svbrdf.shape[1]    # 应该是 4096 (4 * 1024)
 
-        # 确保图片宽度正确是4倍的高度
-        if width != 4 * height:
-            raise ValueError(f"Expected width to be 4 times the height, but got {width}")
+        # 如果图片宽度不为4倍宽度，则读取后4个图片宽度
+        if width < 4 * height:
+            raise ValueError(f"Expected width to be at least 4 times the height, but got {width}")
+        elif width > 4 * height:
+            # 读取后4个图片宽度
+            print(f"[WARNING:SvbrdfIO:load_textures_th] Detected extra width. Adjusting to the last 4 textures.")
+            svbrdf = svbrdf[:, -4*height:]  # 保留最后4个贴图的部分
 
         normal = svbrdf[:, :height]                    # 法线贴图
         diffuse = svbrdf[:, height:2*height]           # 漫反射贴图
@@ -205,7 +217,7 @@ class SvbrdfIO:
         # 将所有贴图转换为 torch tensor，并拼接
         return th.cat((diffuse_resized.unsqueeze(0), normal_resized.unsqueeze(0)[:, :2, :, :], roughness_resized.unsqueeze(0), specular_resized.unsqueeze(0)), 1)
 
-    def save_textures_th(self, textures_th, textures_dir):
+    def save_textures_th(self, textures_th, textures_dir, input_num):
         textures_dir.mkdir(parents=True, exist_ok=True)
 
         diffuse_th = (textures_th[:, 0:3, :, :] + 1) / 2
@@ -224,7 +236,14 @@ class SvbrdfIO:
         imwrite(specular, textures_dir / "spe.png", "srgb")
         imwrite(roughness, textures_dir / "rgh.png", "rough")
 
-        tex4to1(textures_dir)
+        tex4to1(textures_dir, input_num)
+        
+        # 删除nom dif spe rgh这几个文件
+        (textures_dir / "nom.png").unlink()
+        (textures_dir / "dif.png").unlink()
+        (textures_dir / "spe.png").unlink()
+        (textures_dir / "rgh.png").unlink()
+        
 
     def load_images_th(self, images_dir, res=256):
         if not images_dir.exists:
@@ -238,7 +257,7 @@ class SvbrdfIO:
             image = imread(fn_image, "srgb", (res, res))
             images_th[i, :, :, :] = self.np_to_th(image).permute(2, 0, 1)
 
-        print("[DONE:SvbrdfIO] Load images")
+        # print("[DONE:SvbrdfIO] Load images")
         return images_th
 
     def save_images_th(self, images_th, images_dir):
@@ -256,4 +275,4 @@ class SvbrdfIO:
         if self.n_of_imgs == 9:
             img9to1(images_dir)
 
-        print("[DONE:SvbrdfIO] Save images")
+        # print("[DONE:SvbrdfIO] Save images")

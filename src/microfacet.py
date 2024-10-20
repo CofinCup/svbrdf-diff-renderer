@@ -24,7 +24,7 @@ class Microfacet:
         # 原本的代码中需求的光照强度是3维的，但是montage数据中只有1维，所以这里需要扩展维度
         self.light_pow = cl[2].expand(3).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(n, -1, res, res)
 
-        print("[DONE:Microfacet] Initial object")
+        # print("[DONE:Microfacet] Initial object")
 
     def GGX(self, cos_h, alpha):
         c2 = cos_h ** 2
@@ -79,6 +79,82 @@ class Microfacet:
         specular = (((textures[:, 6:9, :, :] + 1) / 2) ** 2.2).expand(self.n_of_imgs, -1, -1, -1)
 
         return normal, diffuse, specular, roughness
+
+    def eval_with_trick(self, textures):
+        assert(textures.shape[2] == textures.shape[3])
+        assert(self.res == textures.shape[2])
+
+        normal, diffuse, specular, roughness = self.tex2map(textures)
+
+        # Computes viewing direction, light direction, half angle
+        v, _ = self.get_dir(self.camera_pos)
+        l, dist_l_sq = self.get_dir(self.light_pos)
+        h = self.normalize(l + v)
+
+        # Computes dot product betweeen vectors
+        n_dot_v = th.full_like(self.dot(normal, v), 0.98)
+        n_dot_l = th.full_like(self.dot(normal, l), 0.98)
+        n_dot_h = th.full_like(self.dot(normal, h), 0.98)
+        v_dot_h = th.full_like(self.dot(v, h), 0.98)
+
+        # lambert brdf
+        f1 = diffuse / np.pi
+        f1 = f1 * (1 - specular)
+
+        # cook-torrence brdf
+        D = self.GGX(n_dot_h, roughness**2)
+        F = self.Fresnel(v_dot_h, specular)
+        G = self.Smith(n_dot_v, n_dot_l, roughness**2)
+        f2 = D * F * G / (4 * n_dot_v * n_dot_l + self.eps)
+
+        # brdf
+        kd = 1
+        ks = 1
+        f = kd * f1 + ks * f2
+
+        # rendering
+        img = self.light_pow * f * n_dot_l / dist_l_sq
+
+        # print("[DONE:Microfacet] rendering")
+        return img.clamp(self.eps, 1) ** (1 / 2.2)
+
+    def eval_only_diffuse(self, textures):
+        assert(textures.shape[2] == textures.shape[3])
+        assert(self.res == textures.shape[2])
+
+        normal, diffuse, specular, roughness = self.tex2map(textures)
+
+        # Computes viewing direction, light direction, half angle
+        v, _ = self.get_dir(self.camera_pos)
+        l, dist_l_sq = self.get_dir(self.light_pos)
+        h = self.normalize(l + v)
+
+        # Computes dot product betweeen vectors
+        n_dot_v = self.dot(normal, v).clamp(min=0)
+        n_dot_l = self.dot(normal, l).clamp(min=0)
+        n_dot_h = self.dot(normal, h).clamp(min=0)
+        v_dot_h = self.dot(v, h).clamp(min=0)
+
+        # lambert brdf
+        f1 = diffuse / np.pi
+        f1 = f1 * (1 - specular)
+
+        # cook-torrence brdf
+        D = self.GGX(n_dot_h, roughness**2)
+        F = self.Fresnel(v_dot_h, specular)
+        G = self.Smith(n_dot_v, n_dot_l, roughness**2)
+        f2 = D * F * G / (4 * n_dot_v * n_dot_l + self.eps)
+
+        # brdf
+        kd = 1
+        ks = 0
+        f = kd * f1 + ks * f2
+
+        # rendering
+        img = self.light_pow * f * n_dot_l / dist_l_sq
+
+        # print("[DONE:Microfacet] rendering")
+        return img.clamp(self.eps, 1) ** (1 / 2.2)
 
     def eval(self, textures):
         assert(textures.shape[2] == textures.shape[3])

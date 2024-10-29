@@ -81,7 +81,7 @@ class SvbrdfOptim(Optim):
 
 class SvbrdfIO:
     # def __init__(self, json_dir, dir5, device):
-    def __init__(self, json_dir, dir5, device, input_num):
+    def __init__(self, json_dir, dir5, device, input_num = None):
         self.device = device
 
         if not json_dir.exists():
@@ -104,8 +104,9 @@ class SvbrdfIO:
         self.optimize_dir = result_dir / optimize_dir
         self.rerender_dir = result_dir / rerender_dir
         
-        data["camera_pos"] = data["camera_pos"][:input_num]
-        data["light_pos"] = data["light_pos"][:input_num]
+        if input_num is not None:
+            data["camera_pos"] = data["camera_pos"][:input_num]
+            data["light_pos"] = data["light_pos"][:input_num]
         
         if "idx" in data:
             self.idx = data["idx"]
